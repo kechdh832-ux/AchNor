@@ -1,0 +1,105 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Information about the application user",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "points": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "photoURL": { "type": "string" }
+      },
+      "required": ["uid", "displayName", "email", "points", "createdAt"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "A daily task for the user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string", "enum": ["work", "study", "sport", "worship", "other"] },
+        "completed": { "type": "boolean" },
+        "isPriority": { "type": "boolean" },
+        "groupId": { "type": "string" },
+        "time": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "category", "completed", "date", "createdAt"]
+    },
+    "Group": {
+      "title": "Group",
+      "description": "A competitive group for users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "inviteCode": { "type": "string" },
+        "creatorId": { "type": "string" },
+        "members": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "inviteCode", "creatorId", "members", "createdAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A chat message within a group",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "groupId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["groupId", "senderId", "senderName", "text", "createdAt"]
+    },
+    "AthkarProgress": {
+      "title": "Athkar Progress",
+      "description": "Daily progress on athkar items",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "thikrId": { "type": "string" },
+        "count": { "type": "number" },
+        "target": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "date", "thikrId", "count", "target", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile data"
+    },
+    "/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "User tasks"
+    },
+    "/groups/{groupId}": {
+      "schema": "Group",
+      "description": "Group data"
+    },
+    "/groups/{groupId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Group chat messages"
+    },
+    "/athkarProgress/{progressId}": {
+      "schema": "AthkarProgress",
+      "description": "Athkar progress tracking"
+    },
+    "/assistantMessages/{userId}/chat/{messageId}": {
+      "schema": "Message",
+      "description": "Assistant chat messages"
+    }
+  }
+}

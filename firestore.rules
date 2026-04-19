@@ -1,0 +1,128 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper Functions
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isMember(members) { return isSignedIn() && request.auth.uid in members; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // Validation Blueprints
+    function isValidUser(data) {
+      return data.uid == request.auth.uid
+        && data.displayName is string && data.displayName.size() <= 100
+        && data.email is string && data.email.size() <= 150
+        && data.points is number;
+    }
+
+    function isValidTask(data) {
+      return data.userId == request.auth.uid
+        && data.title is string && data.title.size() <= 300
+        && data.category in ['work', 'study', 'sport', 'worship', 'other']
+        && data.completed is bool
+        && (!('isPriority' in data) || data.isPriority == null || data.isPriority is bool)
+        && (!('groupId' in data) || data.groupId == null || (data.groupId is string && data.groupId.size() <= 128))
+        && data.date is string && data.date.size() <= 10;
+    }
+
+    function isValidGroup(data) {
+      return data.name is string && data.name.size() <= 100
+        && data.description is string && data.description.size() <= 1000
+        && data.inviteCode is string && data.inviteCode.size() <= 20
+        && data.creatorId is string && data.creatorId.size() <= 128
+        && data.members is list && data.members.size() <= 100;
+    }
+
+    function isValidMessage(data) {
+      return data.groupId is string && data.groupId.size() <= 128
+        && data.senderId == request.auth.uid
+        && data.senderName is string && data.senderName.size() <= 100
+        && data.text is string && data.text.size() <= 2000;
+    }
+
+    function isValidAthkarProgress(data) {
+      return data.userId == request.auth.uid
+        && data.date is string && data.date.size() <= 10
+        && data.thikrId is string && data.thikrId.size() <= 50
+        && data.count is number && data.count >= 0
+        && data.target is number && data.target > 0;
+    }
+
+    // Collection Rules
+
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidUser(incoming()) && incoming().points == 0 && incoming().createdAt == request.time && isValidId(userId) && userId == request.auth.uid;
+      allow update: if isOwner(userId) && isValidUser(incoming()) 
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && (incoming().updatedAt == request.time || !('updatedAt' in incoming().diff(existing()).affectedKeys()))
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'points', 'photoURL', 'updatedAt']);
+    }
+
+    match /tasks/{taskId} {
+      allow list: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || 
+        (resource.data.groupId != null && request.auth.uid in get(/databases/$(database)/documents/groups/$(resource.data.groupId)).data.members)
+      );
+      allow get: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || 
+        (resource.data.groupId != null && request.auth.uid in get(/databases/$(database)/documents/groups/$(resource.data.groupId)).data.members)
+      );
+      allow create: if isSignedIn() && isValidTask(incoming()) && incoming().completed == false && incoming().createdAt == request.time && isValidId(taskId);
+      allow update: if isSignedIn() && (
+        existing().userId == request.auth.uid || 
+        (existing().groupId != null && request.auth.uid in get(/databases/$(database)/documents/groups/$(existing().groupId)).data.members)
+      )
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && (incoming().updatedAt == request.time || !('updatedAt' in incoming().diff(existing()).affectedKeys()))
+        && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'completed', 'time', 'category', 'updatedAt', 'date', 'isPriority', 'groupId']);
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    match /groups/{groupId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn(); 
+      allow create: if isSignedIn() && isValidGroup(incoming()) && incoming().creatorId == request.auth.uid && incoming().members.size() == 1 && incoming().members[0] == request.auth.uid && incoming().createdAt == request.time && isValidId(groupId);
+      allow update: if isSignedIn() && (
+        // Creator can update meta
+        (existing().creatorId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'description', 'members'])) ||
+        // Members can join via code logic (only members list changes)
+        (incoming().diff(existing()).affectedKeys().hasOnly(['members']) && incoming().members.size() == existing().members.size() + 1 && request.auth.uid in incoming().members)
+      );
+
+      match /messages/{messageId} {
+        allow list: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
+        allow create: if isSignedIn() && isValidMessage(incoming()) && incoming().createdAt == request.time && isValidId(messageId)
+          && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
+      }
+    }
+
+    match /athkarProgress/{progressId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidAthkarProgress(incoming()) && incoming().updatedAt == request.time && isValidId(progressId);
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && isValidAthkarProgress(incoming())
+        && incoming().userId == existing().userId
+        && incoming().date == existing().date
+        && incoming().thikrId == existing().thikrId
+        && (incoming().updatedAt == request.time || !('updatedAt' in incoming().diff(existing()).affectedKeys()))
+        && incoming().diff(existing()).affectedKeys().hasOnly(['count', 'target', 'updatedAt']);
+    }
+
+    match /assistantMessages/{userId}/chat/{messageId} {
+      allow list: if isSignedIn() && isOwner(userId);
+      allow create: if isSignedIn() && isOwner(userId) && isValidId(messageId);
+      allow delete: if isSignedIn() && isOwner(userId);
+    }
+  }
+}
